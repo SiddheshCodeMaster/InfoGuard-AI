@@ -94,6 +94,18 @@ def save_revision(title, rev_info, clean_text):
         "previous_revid": last_page["last_revid"]
     })
 
+def insert_username_analysis(title, rev_info, username_analysis):
+    analysis.insert_one({
+        "page": title,
+        "revid": rev_info["revid"],
+        "username_flag": username_analysis["risk_score"] > 0.5,
+        "username_risk": username_analysis,
+        "content_flag": False,        # placeholder for next phase
+        "risk_score": username_analysis["risk_score"],
+        "similarity": None,           # placeholder for NLP diff
+        "summary": "Username risk analysis"
+    })
+
 def update_page(title, new_revid):
     pages.update_one(
         {"_id": title},
@@ -127,8 +139,16 @@ def monitor_page(title):
 
     page = get_page_record(title)
 
+    # Auto-register page if not present
     if page is None:
-        print("Page not registered.")
+        print("Page not found in DB. Registering now...")
+        pages.insert_one({
+            "_id": title,
+            "last_revid": rev_info["revid"],
+            "last_checked": None,
+            "watch_status": "active"
+        })
+        print("Page registered. No analysis on first insert.")
         return
 
     if has_page_changed(title, rev_info["revid"]):
@@ -136,10 +156,14 @@ def monitor_page(title):
 
         clean_text = clean_wiki_text_nlp(rev_info["content"])
         save_revision(title, rev_info, clean_text)
+
+        username_analysis = compute_username_risk(rev_info["user"])
+        insert_username_analysis(title, rev_info, username_analysis)
+
         update_page(title, rev_info["revid"])
 
-        print("Revision stored.")
+        print("Revision + username analysis stored.")
     else:
         print("No change.")
 
-monitor_page("Jaipur")
+monitor_page("World War II")

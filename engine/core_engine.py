@@ -2,6 +2,13 @@ import re
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
+semantic_model = None
+
+RISK_WORDS = [
+    "propaganda", "agenda", "fake", "exposed",
+    "corrupt", "biased", "manipulated", "truth"
+]
+
 SUSPICIOUS_KEYWORDS = [
     "official", "admin", "moderator", "verified",
     "gov", "government", "bjp", "congress", "party",
@@ -11,6 +18,40 @@ SUSPICIOUS_KEYWORDS = [
     "brand", "store", "shop", "officialpage",
     "anti", "pro", "support", "boycott"
 ]
+
+def get_semantic_model():
+    global semantic_model
+    if semantic_model is None:
+        print("-- Loading semantic model... --")
+        semantic_model = SentenceTransformer("all-MiniLM-L6-v2")
+    return semantic_model
+
+def compute_semantic_similarity(old_text: str, new_text: str) -> float:
+    if not old_text or not new_text:
+        return 1.0  # nothing to compare
+
+    model = get_semantic_model()
+
+    embeddings = model.encode(
+        [old_text, new_text],
+        normalize_embeddings=True
+    )
+
+    similarity = cosine_similarity(
+        [embeddings[0]],
+        [embeddings[1]]
+    )[0][0]
+
+    return round(float(similarity), 3)
+
+def compute_content_risk(text: str):
+    text = text.lower()
+    hits = [w for w in RISK_WORDS if w in text]
+
+    return {
+        "risk_words": hits,
+        "risk_score": min(len(hits) * 0.2, 1.0)
+    }
 
 def tokenize_username(username):
     return re.findall(r"[a-zA-Z]+", username.lower())
@@ -59,3 +100,25 @@ def compute_username_risk(username):
         "reasons": list(set(reasons))
     }
 
+def analyze_edit(old_text, new_text, username):
+    username_risk = compute_username_risk(username)
+    content_risk = compute_content_risk(new_text)
+    similarity = compute_semantic_similarity(old_text, new_text)
+
+    semantic_risk = 1 - similarity
+    final_risk = round(
+        (semantic_risk * 0.5) +
+        (content_risk["risk_score"] * 0.3) +
+        (username_risk["risk_score"] * 0.2),
+        3
+    )
+
+    flagged = final_risk >= 0.65 or similarity < 0.7
+
+    return {
+        "semantic_similarity": similarity,
+        "username_risk": username_risk,
+        "content_risk": content_risk,
+        "final_risk": final_risk,
+        "flagged": flagged
+    }

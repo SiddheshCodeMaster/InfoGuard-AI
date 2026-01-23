@@ -4,6 +4,7 @@ import os
 import re
 import mwparserfromhell as mwpf
 from pymongo import MongoClient
+from engine.core_engine import analyze_edit
 
 # Connecting to Mongo DB Client:
 
@@ -132,38 +133,89 @@ def clean_wiki_text_nlp(text):
     return clean_text.strip()
 
 def monitor_page(title):
-    print(f"Checking {title}...")
+    print(f"\n Checking page: {title}")
 
+    # 1. Fetch latest Wikipedia revision
     data = fetch_latest_revision(title)
     rev_info = extract_revision_info(data)
 
+    # 2. Check if page exists in DB
     page = get_page_record(title)
 
-    # Auto-register page if not present
+    # 3. Auto-register page if first time
     if page is None:
-        print("Page not found in DB. Registering now...")
         pages.insert_one({
             "_id": title,
             "last_revid": rev_info["revid"],
-            "last_checked": None,
+            "last_checked": datetime.utcnow(),
             "watch_status": "active"
         })
-        print("Page registered. No analysis on first insert.")
+        print("Page registered. Baseline established.")
         return
 
-    if has_page_changed(title, rev_info["revid"]):
-        print("Change detected!")
+    # 4. No change → exit early
+    if page["last_revid"] == rev_info["revid"]:
+        print("No change detected.")
+        pages.update_one(
+            {"_id": title},
+            {"$set": {"last_checked": datetime.utcnow()}}
+        )
+        return
 
-        clean_text = clean_wiki_text_nlp(rev_info["content"])
-        save_revision(title, rev_info, clean_text)
+    print("Change detected!")
 
-        username_analysis = compute_username_risk(rev_info["user"])
-        insert_username_analysis(title, rev_info, username_analysis)
+    # 5. Clean new content
+    new_clean_text = clean_wiki_text_nlp(rev_info["content"])
 
-        update_page(title, rev_info["revid"])
+    # 6. Fetch previous clean content
+    prev_revision = revisions.find_one(
+        {"page": title},
+        sort=[("timestamp", -1)]
+    )
+    old_clean_text = prev_revision["clean_content"] if prev_revision else ""
 
-        print("Revision + username analysis stored.")
-    else:
-        print("No change.")
+    # 7. CORE ENGINE CALL (ALL INTELLIGENCE HERE)
+    analysis_result = analyze_edit(
+        old_text=old_clean_text,
+        new_text=new_clean_text,
+        username=rev_info["user"]
+    )
+
+    # 8. Store revision
+    revisions.insert_one({
+        "page": title,
+        "revid": rev_info["revid"],
+        "user": rev_info["user"],
+        "timestamp": rev_info["timestamp"],
+        "comment": rev_info.get("comment", ""),
+        "raw_content": rev_info["content"],
+        "clean_content": new_clean_text,
+        "previous_revid": page["last_revid"]
+    })
+
+    # 9. Store analysis
+    analysis.insert_one({
+        "page": title,
+        "revid": rev_info["revid"],
+        "username": rev_info["user"],
+        **analysis_result,
+        "created_at": datetime.utcnow()
+    })
+
+    # 10. Update page tracker
+    pages.update_one(
+        {"_id": title},
+        {"$set": {
+            "last_revid": rev_info["revid"],
+            "last_checked": datetime.utcnow()
+        }}
+    )
+
+    # 11. Log outcome
+    status = "FLAGGED" if analysis_result["flagged"] else "OK"
+    print(
+        f"{status} | Similarity: {analysis_result['semantic_similarity']} "
+        f"| Risk: {analysis_result['final_risk']}"
+    )
 
 monitor_page("World War II")

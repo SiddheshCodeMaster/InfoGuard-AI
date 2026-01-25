@@ -2,3 +2,4 @@
 infoguardai/
 __pycache__/
 *.pyc
+.env

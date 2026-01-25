@@ -8,8 +8,16 @@ from engine.core_engine import analyze_edit
 
 # Connecting to Mongo DB Client:
 
-client = MongoClient("mongodb://localhost:27017/")
-db = client["infoguard"]
+MONGO_URI = os.getenv("MONGODB_URI")
+
+if not MONGO_URI:
+    raise RuntimeError("MONGODB_URI not set")
+
+client = MongoClient(MONGO_URI)
+db = client['infoguard']
+
+# client = MongoClient("mongodb://localhost:27017/")
+# db = client["infoguard"]
 
 # Fetching Collections:
 

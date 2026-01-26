@@ -5,6 +5,7 @@ import logging, time
 import mwparserfromhell as mwpf
 from pymongo import MongoClient
 from engine.core_engine import analyze_edit
+from collections import Counter
 
 # Logging Configuration:
 
@@ -31,6 +32,62 @@ pages = db["pages"]
 revisions = db["revisions"]
 analysis = db["analysis"]
 runs = db["runs"]
+
+# To fetch recent information from Wikipedia:
+
+def fetch_recent_changes(limit=100):
+    url = "https://en.wikipedia.org/w/api.php"
+
+    params = {
+        "action": "query",
+        "list": "recentchanges",
+        "rclimit": limit,
+        "rcnamespace": 0,
+        "rcprop": "title|timestamp|user|comment",
+        "format": "json"
+    }
+
+    headers = {"User-Agent": "InfoguardAI/1.0"}
+
+    response = requests.get(url, params=params, headers=headers)
+    response.raise_for_status()
+    data = response.json()
+    
+    return data.get("query", {}).get("recentchanges", [])
+
+def get_top_edited_pages(recent_changes, top_n=10):
+    titles = [
+        c['title']
+        for c in recent_changes
+        if "bot" not in c["user"].lower()
+    ]
+
+    counts = Counter(titles)
+    return [title for title, _ in counts.most_common(top_n)]
+
+def update_watchlist_with_top_pages(top_pages):
+    for title in top_pages:
+        if pages.find_one({"_id": title}) is None:
+            pages.insert_one({
+                "_id": title,
+                "last_revid": None,
+                "last_Checked": None,
+                "watch_status": "active"
+            })
+            logger.info("Added to watchlist: %s", title)
+        else:
+            logger.info("Already watching: %s", title)
+
+def discover_active_pages(limit=200, top_n=10):
+    logger.info("Fetching recent changes.")
+    recent_changes = fetch_recent_changes(limit)
+    logger.info("Recent changes fetched: %s records", len(recent_changes))
+
+    top_pages = get_top_edited_pages(recent_changes, top_n)
+    logger.info("Top edited pages: %s", top_pages)
+
+    update_watchlist_with_top_pages(top_pages)
+    logger.info("watchlist updated with active pages.")
 
 def fetch_page(title):
     url = "https://en.wikipedia.org/w/api.php"
@@ -247,7 +304,15 @@ pages_checked = 0
 changes_detected = 0
 flagged_count = 0
 
-pages_to_monitor = ["World War II", "India", "Donald Trump"]
+discover_active_pages(limit=200, top_n=10)
+
+pages_to_monitor = list(
+    pages.find({"watch_status": "active"}, {"_id":1})
+)
+
+pages_to_monitor = [p["_id"] for p in pages_to_monitor]
+
+# pages_to_monitor = [p["_id"] for p in pages.find({"watch_status": "Active"})]
 
 for title in pages_to_monitor:
     pages_checked += 1

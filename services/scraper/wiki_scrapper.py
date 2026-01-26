@@ -30,6 +30,7 @@ db = client['infoguard']
 pages = db["pages"]
 revisions = db["revisions"]
 analysis = db["analysis"]
+runs = db["runs"]
 
 def fetch_page(title):
     url = "https://en.wikipedia.org/w/api.php"
@@ -266,3 +267,13 @@ logger.info(
     flagged_count,
     duration
 )
+
+logger.info("Inserting run metrics into MongoDB...")
+
+runs.insert_one({
+    "timestamp": datetime.utcnow(),
+    "pages_checked": pages_checked,
+    "changes_detected": changes_detected,
+    "flagged": flagged_count,
+    "duration_seconds": duration
+})

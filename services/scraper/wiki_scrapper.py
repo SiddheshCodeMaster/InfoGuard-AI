@@ -1,10 +1,19 @@
 import requests 
 from datetime import datetime
-import os
-import re
+import os , re
+import logging, time
 import mwparserfromhell as mwpf
 from pymongo import MongoClient
 from engine.core_engine import analyze_edit
+
+# Logging Configuration:
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
+
+logger = logging.getLogger(__name__)
 
 # Connecting to Mongo DB Client:
 
@@ -15,9 +24,6 @@ if not MONGO_URI:
 
 client = MongoClient(MONGO_URI)
 db = client['infoguard']
-
-# client = MongoClient("mongodb://localhost:27017/")
-# db = client["infoguard"]
 
 # Fetching Collections:
 
@@ -141,7 +147,7 @@ def clean_wiki_text_nlp(text):
     return clean_text.strip()
 
 def monitor_page(title):
-    print(f"\n Checking page: {title}")
+    logger.info("Checking page: %s", title)
 
     # 1. Fetch latest Wikipedia revision
     data = fetch_latest_revision(title)
@@ -158,19 +164,19 @@ def monitor_page(title):
             "last_checked": datetime.utcnow(),
             "watch_status": "active"
         })
-        print("Page registered. Baseline established.")
-        return
+        logger.info("Page registered. Baseline established.")
+        return {"changed": False, "flagged": False}
 
     # 4. No change → exit early
     if page["last_revid"] == rev_info["revid"]:
-        print("No change detected.")
+        logger.info("No change detected.")
         pages.update_one(
             {"_id": title},
             {"$set": {"last_checked": datetime.utcnow()}}
         )
-        return
+        return {"changed": False, "flagged": False}
 
-    print("Change detected!")
+    logger.warning("Change detected on %s!", title)
 
     # 5. Clean new content
     new_clean_text = clean_wiki_text_nlp(rev_info["content"])
@@ -221,9 +227,42 @@ def monitor_page(title):
 
     # 11. Log outcome
     status = "FLAGGED" if analysis_result["flagged"] else "OK"
-    print(
-        f"{status} | Similarity: {analysis_result['semantic_similarity']} "
-        f"| Risk: {analysis_result['final_risk']}"
-    )
+    logger.info("%s | Similarity: %s | Risk: %s", status, 
+                analysis_result['semantic_similarity'], 
+                analysis_result['final_risk'])
+    
+    return {
+        "changed": True,
+        "flagged": analysis_result["flagged"]
+    }
+    # print(
+    #     f"{status} | Similarity: {analysis_result['semantic_similarity']} "
+    #     f"| Risk: {analysis_result['final_risk']}"
+    # )
 
-monitor_page("World War II")
+start_time = time.time()
+
+pages_checked = 0
+changes_detected = 0
+flagged_count = 0
+
+pages_to_monitor = ["World War II", "India", "Donald Trump"]
+
+for title in pages_to_monitor:
+    pages_checked += 1
+    result = monitor_page(title)
+
+    if result["changed"]:
+        changes_detected += 1
+    if result["flagged"]:
+        flagged_count += 1
+
+duration = round(time.time() - start_time, 2)
+
+logger.info(
+    "Run summary | pages=%s changes=%s flagged=%s duration=%ss",
+    pages_checked,
+    changes_detected,
+    flagged_count,
+    duration
+)

@@ -17,3 +17,4 @@ transformers>=4.35
 # Utilities
 tqdm>=4.65
 regex>=2023.10
+docker==7.1.0

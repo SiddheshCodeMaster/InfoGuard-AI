@@ -106,15 +106,14 @@ def analyze_edit(old_text, new_text, username):
     similarity = compute_semantic_similarity(old_text, new_text)
 
     semantic_risk = 1 - similarity
+
     final_risk = round(
-        (semantic_risk * 0.5) +
-        (content_risk["risk_score"] * 0.3) +
-        (username_risk["risk_score"] * 0.2),
-        3
-    )
+    (semantic_risk * 0.4) +
+    (content_risk["risk_score"] * 0.4) +
+    (username_risk["risk_score"] * 0.2),3)
 
-    flagged = final_risk >= 0.65 or similarity < 0.7
-
+    flagged = final_risk >= 0.5
+    
     return {
         "semantic_similarity": similarity,
         "username_risk": username_risk,

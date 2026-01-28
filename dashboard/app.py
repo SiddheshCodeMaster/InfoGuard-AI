@@ -12,6 +12,13 @@ db = client["infoguard"]
 
 runs = db["runs"]
 analysis = db["analysis"]
+anomalies = db["anomalies"]
+
+def load_anomalies():
+    docs = list(anomalies.find().sort("timestamp", -1))
+    for d in docs:
+        d.pop("_id", None)
+    return pd.DataFrame(docs)
 
 def load_runs():
     docs = list(runs.find().sort("timestamp", -1).limit(100))
@@ -26,6 +33,8 @@ def load_runs():
     return df
 
 df_runs = load_runs()
+
+df_anom = load_anomalies()
 
 st.dataframe(df_runs)
 
@@ -75,3 +84,19 @@ else:
     col2.metric("Changes Detected", int(df_runs.iloc[0]["changes_detected"]))
     col3.metric("Flagged Edits", int(df_runs.iloc[0]["flagged"]))
     col4.metric("Duration (s)", round(df_runs.iloc[0]["duration_seconds"], 2))
+
+st.subheader("⚠ Risk Anomalies")
+
+if df_anom.empty:
+    st.info("No anomalies detected yet")
+else:
+    st.dataframe(df_anom[["timestamp", "page", "final_risk", "risk_z"]])
+
+    fig3 = px.scatter(
+        df_anom,
+        x="timestamp",
+        y="final_risk",
+        color="risk_z",
+        title="Risk Spike Anomalies"
+    )
+    st.plotly_chart(fig3, use_container_width=True)

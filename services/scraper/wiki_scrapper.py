@@ -136,6 +136,10 @@ def extract_text(data):
 
 def extract_revision_info(data):
     page = data["query"]["pages"][0]
+
+    if "revisions" not in page or not page["revisions"]:
+        return None   # no valid revision available
+
     rev = page["revisions"][0]
 
     return {
@@ -210,6 +214,11 @@ def monitor_page(title):
     # 1. Fetch latest Wikipedia revision
     data = fetch_latest_revision(title)
     rev_info = extract_revision_info(data)
+
+    if rev_info is None:
+        logger.warning("No revision data available for %s - skipping..."
+                       , title)
+        return {"changed": False, "flagged": False}
 
     # 2. Check if page exists in DB
     page = get_page_record(title)

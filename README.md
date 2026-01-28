@@ -8,6 +8,7 @@ InfoGuard AI is an automated monitoring system that tracks Wikipedia pages in re
 - `Web scraping` via Wikipedia API
 - NLP-based `semantic similarity analysis`
 - `Heuristic risk detection` (username + content)
+- `Anomaly Detection` (z-score analysis)
 - Saves the results to a CSV file
 - Cloud persistence with `MongoDB`
 - `CI/CD automation` using `GitHub Actions`

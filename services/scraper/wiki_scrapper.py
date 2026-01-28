@@ -5,6 +5,7 @@ import logging, time
 import mwparserfromhell as mwpf
 from pymongo import MongoClient
 from engine.core_engine import analyze_edit
+from services.scraper.http_client import safe_get
 from collections import Counter
 
 # Logging Configuration:
@@ -49,11 +50,12 @@ def fetch_recent_changes(limit=100):
 
     headers = {"User-Agent": "InfoguardAI/1.0"}
 
-    response = requests.get(url, params=params, headers=headers)
-    response.raise_for_status()
-    data = response.json()
-    
-    return data.get("query", {}).get("recentchanges", [])
+    data = safe_get(url, params, headers)
+    if not data:
+        return []
+
+    return data["query"]["recentchanges"]
+
 
 def get_top_edited_pages(recent_changes, top_n=10):
     titles = [
@@ -104,9 +106,12 @@ def fetch_page(title):
         "titles": title
     }
 
-    response = requests.get(url, params=params, headers=headers)
-    response.raise_for_status()
-    return response.json()
+    data = safe_get(url, params, headers)
+
+    if not data:
+        return None
+
+    return data
 
 def fetch_latest_revision(title):
     url = "https://en.wikipedia.org/w/api.php"
@@ -125,9 +130,12 @@ def fetch_latest_revision(title):
         "User-Agent": "InfoGuardAI/1.0 (https://github.com/SiddheshCodeMaster/InfoGuard-AI)"
     }
 
-    response = requests.get(url, params=params, headers=headers)
-    response.raise_for_status()
-    return response.json()
+    data = safe_get(url, params, headers)
+
+    if not data:
+        return None
+
+    return data
 
 def extract_text(data):
     pages = data["query"]["pages"]
@@ -350,4 +358,4 @@ runs.insert_one({
     "changes_detected": changes_detected,
     "flagged": flagged_count,
     "duration_seconds": duration
-})
+})    

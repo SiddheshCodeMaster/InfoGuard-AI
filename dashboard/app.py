@@ -1,7 +1,16 @@
+import sys
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT_DIR))
+
 import streamlit as st
-import pandas as pd, os
+import pandas as pd
+import os
 from pymongo import MongoClient
 import plotly.express as px
+
+from engine.prioritization import compute_priority
 
 st.set_page_config(page_title="InfoGuard AI Dashboard", layout="wide")
 
@@ -13,6 +22,8 @@ db = client["infoguard"]
 runs = db["runs"]
 analysis = db["analysis"]
 anomalies = db["anomalies"]
+
+df_priority = compute_priority()
 
 def load_anomalies():
     docs = list(anomalies.find().sort("timestamp", -1))
@@ -78,12 +89,15 @@ st.title("InfoGuard AI Monitoring Dashboard")
 if df_runs.empty:
     st.warning("No run data yet")
 else:
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
 
-    col1.metric("Pages Checked", int(df_runs.iloc[0]["pages_checked"]))
-    col2.metric("Changes Detected", int(df_runs.iloc[0]["changes_detected"]))
-    col3.metric("Flagged Edits", int(df_runs.iloc[0]["flagged"]))
-    col4.metric("Duration (s)", round(df_runs.iloc[0]["duration_seconds"], 2))
+    col1.metric("Pages Scanned (Last Run)", int(df_runs.iloc[0]["pages_checked"]))
+    col2.metric("Edits Detected (Last Run)", int(df_runs.iloc[0]["changes_detected"]))
+    col3.metric("Flagged Edits (Last Run)", int(df_runs.iloc[0]["flagged"]))
+    total_flagged = analysis.count_documents({"flagged": True})
+    col4.metric("Total Flagged Edits (All Time)", total_flagged)
+    col5.metric("Run Duration (seconds)", round(df_runs.iloc[0]["duration_seconds"], 2))
+
 
 st.subheader("⚠ Risk Anomalies")
 
@@ -100,3 +114,23 @@ else:
         title="Risk Spike Anomalies"
     )
     st.plotly_chart(fig3, use_container_width=True)
+
+st.subheader("🔥 Top Priority Pages")
+
+if df_priority.empty:
+    st.info("No priority data yet")
+else:
+    st.dataframe(
+        df_priority[["page", "avg_risk", "edit_volume", "anomaly_boost", "priority_score"]]
+        .head(10)
+    )
+
+if not df_priority.empty:
+    fig_priority = px.bar(
+        df_priority.head(10),
+        x="priority_score",
+        y="page",
+        orientation="h",
+        title="Top 10 Risk Priority Pages"
+    )
+    st.plotly_chart(fig_priority, use_container_width=True)

@@ -1,4 +1,4 @@
-# 📘 InfoGuard AI – Automated Wikipedia Integrity Monitoring System
+# 📘 InfoGuard AI – Automated Data Integrity Monitoring System
 
 ## 📌 Project Overview
 

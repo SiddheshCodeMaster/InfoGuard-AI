@@ -3,3 +3,4 @@ infoguardai/
 __pycache__/
 *.pyc
 .env
+DB_Archival/

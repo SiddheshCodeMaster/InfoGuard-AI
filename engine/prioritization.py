@@ -12,13 +12,8 @@ anomalies = db["anomalies"]
 def compute_priority():
     docs = list(analysis.find())
 
-    if not docs:
-        return pd.DataFrame()
-
     cleaned = []
     for d in docs:
-        d.pop("_id", None)
-
         if "page" in d and "final_risk" in d:
             cleaned.append(d)
 
@@ -27,31 +22,44 @@ def compute_priority():
 
     df = pd.DataFrame(cleaned)
 
-    if "created_at" not in df.columns:
-        df["created_at"] = pd.Timestamp.utcnow()
+    if "flagged" not in df.columns:
+        df["flagged"] = False
 
-    df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
+    df["created_at"] = pd.to_datetime(df.get("created_at", pd.Timestamp.utcnow()))
 
-    risk_by_page = df.groupby("page")["final_risk"].mean()
-    edit_volume = df.groupby("page").size()
+    grouped = df.groupby("page")
 
-    anomaly_pages = set(anomalies.distinct("page"))
+    features = grouped.agg(
+        avg_risk=("final_risk", "mean"),
+        max_risk=("final_risk", "max"),
+        edit_volume=("final_risk", "count"),
+        flag_rate=("flagged", "mean")
+    ).reset_index()
 
-    rows = []
-    for page in risk_by_page.index:
-        rows.append({
-            "page": page,
-            "avg_risk": float(risk_by_page[page]),
-            "edit_volume": int(edit_volume[page]),
-            "anomaly_boost": 1 if page in anomaly_pages else 0
-        })
-
-    dfp = pd.DataFrame(rows)
-
-    dfp["priority_score"] = (
-        0.5 * dfp["avg_risk"] +
-        0.3 * dfp["anomaly_boost"] +
-        0.2 * (dfp["edit_volume"] / dfp["edit_volume"].max())
+    anomaly_counts = pd.DataFrame(
+        anomalies.aggregate([
+            {"$group": {"_id": "$page", "count": {"$sum": 1}}}
+        ])
     )
 
-    return dfp.sort_values("priority_score", ascending=False)
+    if not anomaly_counts.empty:
+        anomaly_counts.columns = ["page", "anomaly_count"]
+        features = features.merge(anomaly_counts, on="page", how="left")
+    else:
+        features["anomaly_count"] = 0
+
+    features["anomaly_count"] = features["anomaly_count"].fillna(0)
+
+    # normalize volume
+    features["edit_velocity"] = features["edit_volume"] / features["edit_volume"].max()
+
+    # intelligent weighted score
+    features["priority_score"] = (
+        0.35 * features["avg_risk"] +
+        0.25 * features["max_risk"] +
+        0.2 * features["flag_rate"] +
+        0.1 * features["anomaly_count"] +
+        0.1 * features["edit_velocity"]
+    )
+
+    return features.sort_values("priority_score", ascending=False)

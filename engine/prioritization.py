@@ -1,5 +1,6 @@
-import pandas as pd, os
+import pandas as pd
 from pymongo import MongoClient
+import os
 
 MONGO_URI = os.getenv("MONGODB_URI")
 client = MongoClient(MONGO_URI)
@@ -7,37 +8,41 @@ db = client["infoguard"]
 
 analysis = db["analysis"]
 anomalies = db["anomalies"]
-revisions = db["revisions"] 
 
-def load_recent_risk(window=20):
-    docs = list(analysis.find().sort("created_at", -1).limit(500))
+def compute_priority():
+    docs = list(analysis.find())
+
+    if not docs:
+        return pd.DataFrame()
+
+    cleaned = []
     for d in docs:
         d.pop("_id", None)
 
-    df = pd.DataFrame(docs)
-    df["created_at"] = pd.to_datetime(df["created_at"])
+        if "page" in d and "final_risk" in d:
+            cleaned.append(d)
 
-    return df
-
-def compute_priority():
-    df = load_recent_risk()
-
-    if df.empty:
+    if not cleaned:
         return pd.DataFrame()
 
-    risk_by_page = df.groupby("page")["final_risk"].mean()
+    df = pd.DataFrame(cleaned)
 
+    if "created_at" not in df.columns:
+        df["created_at"] = pd.Timestamp.utcnow()
+
+    df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
+
+    risk_by_page = df.groupby("page")["final_risk"].mean()
     edit_volume = df.groupby("page").size()
 
     anomaly_pages = set(anomalies.distinct("page"))
 
     rows = []
-
     for page in risk_by_page.index:
         rows.append({
             "page": page,
-            "avg_risk": risk_by_page[page],
-            "edit_volume": edit_volume[page],
+            "avg_risk": float(risk_by_page[page]),
+            "edit_volume": int(edit_volume[page]),
             "anomaly_boost": 1 if page in anomaly_pages else 0
         })
 
@@ -50,4 +55,3 @@ def compute_priority():
     )
 
     return dfp.sort_values("priority_score", ascending=False)
-

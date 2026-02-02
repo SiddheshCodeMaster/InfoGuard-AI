@@ -174,7 +174,7 @@ def save_revision(title, rev_info, clean_text):
         "user": rev_info["user"],
         "timestamp": rev_info["timestamp"],
         "comment": rev_info["comment"],
-        "raw_content": rev_info["content"],
+        # "raw_content": rev_info["content"],
         "clean_content": clean_text,
         "previous_revid": last_page["last_revid"]
     })
@@ -277,7 +277,7 @@ def monitor_page(title):
         "user": rev_info["user"],
         "timestamp": rev_info["timestamp"],
         "comment": rev_info.get("comment", ""),
-        "raw_content": rev_info["content"],
+        # "raw_content": rev_info["content"],
         "clean_content": new_clean_text,
         "previous_revid": page["last_revid"]
     })

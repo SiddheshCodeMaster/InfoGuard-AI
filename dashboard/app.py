@@ -15,7 +15,6 @@ from engine.prioritization import compute_priority
 st.set_page_config(page_title="InfoGuard AI Dashboard", layout="wide")
 
 MONGO_URI = os.getenv("MONGODB_URI")
-
 client = MongoClient(MONGO_URI)
 db = client["infoguard"]
 
@@ -23,114 +22,88 @@ runs = db["runs"]
 analysis = db["analysis"]
 anomalies = db["anomalies"]
 
-df_priority = compute_priority()
+# ---------------- SAFE LOADERS ---------------- #
 
-def load_anomalies():
-    docs = list(anomalies.find().sort("timestamp", -1))
+def safe_df(docs):
+    if not docs:
+        return pd.DataFrame()
     for d in docs:
         d.pop("_id", None)
     return pd.DataFrame(docs)
 
 def load_runs():
-    docs = list(runs.find().sort("timestamp", -1).limit(100))
-    if not docs:
-        return pd.DataFrame()
+    return safe_df(list(runs.find().sort("timestamp", -1).limit(100)))
 
-    for d in docs:
-        d.pop("_id", None)   # removed Mongo ObjectId
+def load_anomalies():
+    return safe_df(list(anomalies.find().sort("timestamp", -1)))
 
-    df = pd.DataFrame(docs)
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    return df
+def load_analysis():
+    docs = list(analysis.find())
+    cleaned = [d for d in docs if "page" in d and "final_risk" in d]
+    return safe_df(cleaned)
+
+# ---------------- LOAD DATA ---------------- #
 
 df_runs = load_runs()
-
 df_anom = load_anomalies()
+df_analysis = load_analysis()
+df_priority = compute_priority()
 
-st.dataframe(df_runs)
-
-if not df_runs.empty:
-    fig = px.line(
-        df_runs.sort_values("timestamp"),
-        x="timestamp",
-        y="pages_checked",
-        title="Pages Checked Over Time"
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    fig2 = px.line(
-        df_runs.sort_values("timestamp"),
-        x="timestamp",
-        y="flagged",
-        title="Flagged Edits Over Time"
-    )
-    st.plotly_chart(fig2, use_container_width=True)
-
-def load_flagged():
-    docs = list(
-        analysis.find({"flagged": True})
-        .sort("created_at", -1)
-        .limit(20)
-    )
-    for d in docs:
-        d.pop("_id", None)
-    return pd.DataFrame(docs)
-
-df_flagged = load_flagged()
-
-st.subheader("🚨 Recent Flagged Edits")
-if df_flagged.empty:
-    st.info("No flagged edits yet")
-else:
-    st.dataframe(df_flagged[["page", "username", "final_risk", "semantic_similarity"]])
+# ---------------- DASHBOARD ---------------- #
 
 st.title("InfoGuard AI Monitoring Dashboard")
 
-if df_runs.empty:
-    st.warning("No run data yet")
-else:
-    col1, col2, col3, col4, col5 = st.columns(5)
+if not df_runs.empty:
+    df_runs["timestamp"] = pd.to_datetime(df_runs["timestamp"])
 
+    col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Pages Scanned (Last Run)", int(df_runs.iloc[0]["pages_checked"]))
     col2.metric("Edits Detected (Last Run)", int(df_runs.iloc[0]["changes_detected"]))
     col3.metric("Flagged Edits (Last Run)", int(df_runs.iloc[0]["flagged"]))
-    total_flagged = analysis.count_documents({"flagged": True})
-    col4.metric("Total Flagged Edits (All Time)", total_flagged)
-    col5.metric("Run Duration (seconds)", round(df_runs.iloc[0]["duration_seconds"], 2))
+    col4.metric("Total Flagged Edits", analysis.count_documents({"flagged": True}))
+    col5.metric("Run Duration (s)", round(df_runs.iloc[0]["duration_seconds"], 2))
 
+    st.plotly_chart(px.line(df_runs.sort_values("timestamp"),
+                            x="timestamp", y="pages_checked",
+                            title="Pages Checked Over Time"), use_container_width=True)
 
-st.subheader("⚠ Risk Anomalies")
+    st.plotly_chart(px.line(df_runs.sort_values("timestamp"),
+                            x="timestamp", y="flagged",
+                            title="Flagged Edits Over Time"), use_container_width=True)
 
-if df_anom.empty:
-    st.info("No anomalies detected yet")
-else:
-    st.dataframe(df_anom[["timestamp", "page", "final_risk", "risk_z"]])
+# ---------------- RISK ANALYTICS ---------------- #
 
-    fig3 = px.scatter(
-        df_anom,
-        x="timestamp",
-        y="final_risk",
-        color="risk_z",
-        title="Risk Spike Anomalies"
-    )
-    st.plotly_chart(fig3, use_container_width=True)
+if not df_analysis.empty:
+    st.subheader("📊 Risk Distribution")
+    st.plotly_chart(px.histogram(df_analysis, x="final_risk", nbins=20),
+                    use_container_width=True)
 
-st.subheader("🔥 Top Priority Pages")
+    df_analysis["created_at"] = pd.to_datetime(df_analysis.get("created_at", pd.Timestamp.utcnow()))
+
+    st.subheader("📈 Risk Trend")
+    st.plotly_chart(px.line(df_analysis.sort_values("created_at"),
+                            x="created_at", y="final_risk"),
+                    use_container_width=True)
+
+    st.subheader("🔥 Most Active Pages")
+    page_counts = df_analysis["page"].value_counts().head(10).reset_index()
+    page_counts.columns = ["page", "edit_count"]
+
+    st.plotly_chart(px.bar(page_counts, x="edit_count", y="page", orientation="h"),
+                    use_container_width=True)
+
+# ---------------- PRIORITY ---------------- #
+
+st.subheader("🚨 Top Priority Pages")
 
 if df_priority.empty:
     st.info("No priority data yet")
 else:
-    st.dataframe(
-        df_priority[["page", "avg_risk", "edit_volume", "anomaly_boost", "priority_score"]]
-        .head(10)
+    st.dataframe(df_priority.head(10))
+    st.plotly_chart(
+        px.bar(df_priority.head(10),
+               x="priority_score",
+               y="page",
+               orientation="h"),
+        use_container_width=True
     )
-
-if not df_priority.empty:
-    fig_priority = px.bar(
-        df_priority.head(10),
-        x="priority_score",
-        y="page",
-        orientation="h",
-        title="Top 10 Risk Priority Pages"
-    )
-    st.plotly_chart(fig_priority, use_container_width=True)

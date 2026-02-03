@@ -2,11 +2,23 @@ import re
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
+# ---------------- MODEL CACHE ---------------- #
+
 semantic_model = None
+
+def load_models():
+    global semantic_model
+    if semantic_model is None:
+        print("Loading semantic model...")
+        semantic_model = SentenceTransformer("all-MiniLM-L6-v2")
+    return semantic_model
+
+# ---------------- RISK LEXICONS ---------------- #
 
 RISK_WORDS = [
     "propaganda", "agenda", "fake", "exposed",
-    "corrupt", "biased", "manipulated", "truth"
+    "corrupt", "biased", "manipulated", "truth",
+    "scam", "fraud", "misinformation", "hoax"
 ]
 
 SUSPICIOUS_KEYWORDS = [
@@ -19,22 +31,31 @@ SUSPICIOUS_KEYWORDS = [
     "anti", "pro", "support", "boycott"
 ]
 
-def get_semantic_model():
-    global semantic_model
-    if semantic_model is None:
-        print("-- Loading semantic model... --")
-        semantic_model = SentenceTransformer("all-MiniLM-L6-v2")
-    return semantic_model
+# ---------------- FAST FILTERS ---------------- #
 
-def compute_semantic_similarity(old_text: str, new_text: str) -> float:
+def is_minor_edit(old_text, new_text):
     if not old_text or not new_text:
-        return 1.0  # nothing to compare
+        return False
 
-    model = get_semantic_model()
+    delta = abs(len(new_text) - len(old_text))
+
+    if delta < 150:
+        return True
+
+    return False
+
+# ---------------- SEMANTIC SIMILARITY ---------------- #
+
+def compute_semantic_similarity(old_text, new_text):
+    if not old_text or not new_text:
+        return 1.0
+
+    model = load_models()
 
     embeddings = model.encode(
         [old_text, new_text],
-        normalize_embeddings=True
+        normalize_embeddings=True,
+        show_progress_bar=False
     )
 
     similarity = cosine_similarity(
@@ -44,14 +65,18 @@ def compute_semantic_similarity(old_text: str, new_text: str) -> float:
 
     return round(float(similarity), 3)
 
-def compute_content_risk(text: str):
+# ---------------- CONTENT RISK ---------------- #
+
+def compute_content_risk(text):
     text = text.lower()
     hits = [w for w in RISK_WORDS if w in text]
 
     return {
         "risk_words": hits,
-        "risk_score": min(len(hits) * 0.2, 1.0)
+        "risk_score": min(len(hits) * 0.25, 1.0)
     }
+
+# ---------------- USERNAME ANALYSIS ---------------- #
 
 def tokenize_username(username):
     return re.findall(r"[a-zA-Z]+", username.lower())
@@ -83,7 +108,6 @@ def compute_username_risk(username):
     t = username_token_risk(username)
 
     score = 0.0
-
     score += 0.3 if p["keyword_count"] > 0 else 0
     score += 0.2 if p["has_numbers"] else 0
     score += 0.2 if p["all_caps"] else 0
@@ -100,20 +124,32 @@ def compute_username_risk(username):
         "reasons": list(set(reasons))
     }
 
+# ---------------- CORE ENGINE ---------------- #
+
 def analyze_edit(old_text, new_text, username):
     username_risk = compute_username_risk(username)
     content_risk = compute_content_risk(new_text)
-    similarity = compute_semantic_similarity(old_text, new_text)
+
+    # 🚀 FAST PATH — skip heavy NLP if edit is minor
+    if is_minor_edit(old_text, new_text):
+        similarity = 0.95
+    else:
+        similarity = compute_semantic_similarity(old_text, new_text)
 
     semantic_risk = 1 - similarity
 
     final_risk = round(
-    (semantic_risk * 0.4) +
-    (content_risk["risk_score"] * 0.4) +
-    (username_risk["risk_score"] * 0.2),3)
+        (semantic_risk * 0.4) +
+        (content_risk["risk_score"] * 0.4) +
+        (username_risk["risk_score"] * 0.2),
+        3
+    )
 
-    flagged = final_risk >= 0.5
-    
+    flagged = (
+        final_risk >= 0.55 or
+        (semantic_risk > 0.4 and content_risk["risk_score"] > 0)
+    )
+
     return {
         "semantic_similarity": similarity,
         "username_risk": username_risk,

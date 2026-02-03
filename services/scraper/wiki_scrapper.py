@@ -264,6 +264,10 @@ def monitor_page(title):
     old_clean_text = prev_revision["clean_content"] if prev_revision else ""
 
     # 7. CORE ENGINE CALL (ALL INTELLIGENCE HERE)
+
+    if abs(len(new_clean_text) - len(old_clean_text)) < 200:
+        logger.info("Minor edit detected — fast path.")
+        flagged = False
     analysis_result = analyze_edit(
         old_text=old_clean_text,
         new_text=new_clean_text,
@@ -321,7 +325,7 @@ pages_checked = 0
 changes_detected = 0
 flagged_count = 0
 
-discover_active_pages(limit=200, top_n=10)
+discover_active_pages(limit=80, top_n=10)
 
 pages_to_monitor = list(
     pages.find({"watch_status": "active"}, {"_id":1})

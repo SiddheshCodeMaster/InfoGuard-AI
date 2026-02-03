@@ -14,6 +14,10 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
+# Preloading of Models
+
+RUN python -c "from engine.analyze_edit import load_models; load_models()"
+
 # Copy project files
 COPY . .
 

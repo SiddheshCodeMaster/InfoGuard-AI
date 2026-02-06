@@ -17,9 +17,5 @@ RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 # Copy project files
 COPY . .
 
-# Preloading of Models
-
-RUN python -c "from engine.core_engine import load_models; load_models()"
-
 # Default run command
 CMD ["python", "-m", "services.scraper.wiki_scrapper"]

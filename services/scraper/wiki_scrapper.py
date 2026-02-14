@@ -7,6 +7,7 @@ from pymongo import MongoClient
 from engine.core_engine import analyze_edit
 from services.scraper.http_client import safe_get
 from collections import Counter
+from engine.topic_modeling import generate_topics
 
 # Logging Configuration:
 
@@ -291,6 +292,7 @@ def monitor_page(title):
         "page": title,
         "revid": rev_info["revid"],
         "username": rev_info["user"],
+        "clean_content": new_clean_text,
         **analysis_result,
         "created_at": datetime.utcnow()
     })
@@ -314,10 +316,6 @@ def monitor_page(title):
         "changed": True,
         "flagged": analysis_result["flagged"]
     }
-    # print(
-    #     f"{status} | Similarity: {analysis_result['semantic_similarity']} "
-    #     f"| Risk: {analysis_result['final_risk']}"
-    # )
 
 start_time = time.time()
 
@@ -344,6 +342,9 @@ for title in pages_to_monitor:
     if result["flagged"]:
         flagged_count += 1
 
+logger.info("BERTopic modelling")
+generate_topics()
+
 duration = round(time.time() - start_time, 2)
 
 logger.info(
@@ -362,4 +363,4 @@ runs.insert_one({
     "changes_detected": changes_detected,
     "flagged": flagged_count,
     "duration_seconds": duration
-})    
+})   

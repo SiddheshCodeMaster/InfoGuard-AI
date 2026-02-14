@@ -51,12 +51,19 @@ def load_anomalies():
         df["timestamp"] = pd.to_datetime(df["timestamp"])
     return df
 
+def load_topics():
+    docs = list(db["topics"].find())
+    for d in docs:
+        d.pop("_id", None)
+    return pd.DataFrame(docs)
+
 # ---------------- LOAD ---------------- #
 
 df_runs = load_runs()
 df_analysis = load_analysis()
 df_anom = load_anomalies()
 df_priority = compute_priority()
+df_topics = load_topics()
 
 # ---------------- DASHBOARD ---------------- #
 
@@ -195,3 +202,25 @@ else:
     )
 
     st.plotly_chart(fig_priority, use_container_width=True)
+
+st.subheader("🧠 Emerging Narrative Topics")
+
+if not df_topics.empty:
+    fig_topics = px.bar(
+        df_topics.head(10),
+        x="Count",
+        y="Name",
+        orientation="h",
+        title="Top Emerging Edit Themes"
+    )
+    st.plotly_chart(fig_topics, use_container_width=True)   
+
+st.subheader("📊 Topic Distribution")
+
+fig_topic_dist = px.pie(
+    df_topics.head(8),
+    values="Count",
+    names="Name",
+    title="Risk Narrative Share"
+)
+st.plotly_chart(fig_topic_dist)

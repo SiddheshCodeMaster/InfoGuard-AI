@@ -15,6 +15,9 @@ torch==2.1.2
 transformers==4.37.2
 networkx>=2.8
 accelerate==0.27.2
+bertopic==0.16.0
+umap-learn
+hdbscan
 # Utilities
 tqdm>=4.65
 regex>=2023.10

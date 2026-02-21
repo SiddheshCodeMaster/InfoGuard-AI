@@ -312,18 +312,9 @@ for title in pages_to_monitor:
     if result["flagged"]:
         flagged_count += 1
 
+logger.info("Running BERTopic model")
 
-# SMART BERTopic trigger
-
-if should_run_topic_model():
-
-    logger.info("Running BERTopic model")
-
-    generate_topics()
-
-else:
-
-    logger.info("Skipping BERTopic (not enough risky edits)")
+generate_topics()
 
 
 duration = round(time.time() - start_time, 2)

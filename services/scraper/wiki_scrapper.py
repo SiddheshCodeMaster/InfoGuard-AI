@@ -12,7 +12,13 @@ from engine.topic_modeling import generate_topics
 # ---------------- CONFIG ---------------- #
 
 MAX_PAGES_PER_RUN = 100
-TOPIC_MODEL_INTERVAL_HOURS = 24
+
+# Only run BERTopic if at least this many new risky edits
+MIN_RISKY_DOCS_FOR_TOPIC = 5
+
+# Only consider edits from last X hours
+TOPIC_LOOKBACK_HOURS = 6
+
 
 # ---------------- LOGGING ---------------- #
 
@@ -22,6 +28,7 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
 
 # ---------------- MONGO ---------------- #
 
@@ -37,7 +44,7 @@ pages = db["pages"]
 revisions = db["revisions"]
 analysis = db["analysis"]
 runs = db["runs"]
-meta = db["meta"]
+
 
 # ---------------- DISCOVERY ---------------- #
 
@@ -185,7 +192,8 @@ def monitor_page(title):
             "_id": title,
             "last_revid": rev_info["revid"],
             "last_checked": datetime.utcnow(),
-            "watch_status": "active"
+            "watch_status": "active",
+            "priority_score": 0
         })
 
         return {"changed": False, "flagged": False}
@@ -248,27 +256,23 @@ def monitor_page(title):
     }
 
 
-# ---------------- SHOULD RUN TOPIC MODEL? ---------------- #
+# ---------------- TOPIC MODEL CONDITION ---------------- #
 
 def should_run_topic_model():
 
-    record = meta.find_one({"_id": "topic_model"})
+    cutoff = datetime.utcnow() - timedelta(hours=TOPIC_LOOKBACK_HOURS)
 
-    if not record:
-        return True
+    risky_docs = analysis.count_documents({
 
-    last_run = record["last_run"]
+        "final_risk": {"$gte": 0.35},
 
-    return datetime.utcnow() - last_run > timedelta(hours=TOPIC_MODEL_INTERVAL_HOURS)
+        "created_at": {"$gte": cutoff}
 
+    })
 
-def update_topic_timestamp():
+    logger.info("Recent risky edits: %s", risky_docs)
 
-    meta.update_one(
-        {"_id": "topic_model"},
-        {"$set": {"last_run": datetime.utcnow()}},
-        upsert=True
-    )
+    return risky_docs >= MIN_RISKY_DOCS_FOR_TOPIC
 
 
 # ---------------- MAIN ---------------- #
@@ -279,9 +283,9 @@ pages_checked = 0
 changes_detected = 0
 flagged_count = 0
 
+
 discover_active_pages()
 
-# PRIORITIZED PAGE SELECTION (LIMIT 100)
 
 pages_cursor = pages.find(
     {"watch_status": "active"}
@@ -290,9 +294,11 @@ pages_cursor = pages.find(
     ("last_checked", 1)
 ]).limit(MAX_PAGES_PER_RUN)
 
+
 pages_to_monitor = [p["_id"] for p in pages_cursor]
 
 logger.info("Monitoring %s pages", len(pages_to_monitor))
+
 
 for title in pages_to_monitor:
 
@@ -307,7 +313,7 @@ for title in pages_to_monitor:
         flagged_count += 1
 
 
-# RUN BERTopic only once per day
+# SMART BERTopic trigger
 
 if should_run_topic_model():
 
@@ -315,14 +321,13 @@ if should_run_topic_model():
 
     generate_topics()
 
-    update_topic_timestamp()
-
 else:
 
-    logger.info("Skipping topic modeling (recently run)")
+    logger.info("Skipping BERTopic (not enough risky edits)")
 
 
 duration = round(time.time() - start_time, 2)
+
 
 runs.insert_one({
 
@@ -337,5 +342,6 @@ runs.insert_one({
     "duration_seconds": duration
 
 })
+
 
 logger.info("Run complete in %ss", duration)

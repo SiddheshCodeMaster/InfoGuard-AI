@@ -11,7 +11,7 @@ from engine.topic_modeling import generate_topics
 
 # ---------------- CONFIG ---------------- #
 
-MAX_PAGES_PER_RUN = 100
+MAX_PAGES_PER_RUN = 1000
 
 # Only run BERTopic if at least this many new risky edits
 MIN_RISKY_DOCS_FOR_TOPIC = 5
@@ -48,7 +48,7 @@ runs = db["runs"]
 
 # ---------------- DISCOVERY ---------------- #
 
-def fetch_recent_changes(limit=100):
+def fetch_recent_changes(limit=1000):
 
     url = "https://en.wikipedia.org/w/api.php"
 
@@ -101,7 +101,7 @@ def update_watchlist_with_top_pages(top_pages):
             logger.info("Added to watchlist: %s", title)
 
 
-def discover_active_pages(limit=80, top_n=10):
+def discover_active_pages(limit=900, top_n=500):
 
     logger.info("Discovering active Wikipedia pages")
 

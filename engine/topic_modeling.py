@@ -1,5 +1,6 @@
 from bertopic import BERTopic
 from sentence_transformers import SentenceTransformer
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS, CountVectorizer
 from pymongo import MongoClient
 import os
 
@@ -17,34 +18,37 @@ topics_collection = db["topics"]
 
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
-STOPWORDS = {
-    "the","and","for","with","in","on","at","to","of","by","from",
-    "is","was","are","this","that","it"
+CUSTOM_STOPWORDS = {
+    "the","and","for","with","in","on","at","to","of","by","from","is","was",
+    "are","be","this","that","it","as","an","or","its","their","his","her"
 }
 
-topic_model = BERTopic(
+STOPWORDS = ENGLISH_STOP_WORDS.union(CUSTOM_STOPWORDS)
 
-    embedding_model=embedding_model,
-
-    umap_model=None,  # MASSIVE SPEED BOOST
-
-    calculate_probabilities=False,
-
-    verbose=False
+vectorizer_model = CountVectorizer(
+    stop_words="english",
+    min_df=2,
+    ngram_range=(1,2)
 )
 
+topic_model = BERTopic(
+    vectorizer_model=vectorizer_model,
+    verbose=False,
+    calculate_probabilities=False
+)
 
 def clean_topic_label(words):
 
     clean = [
-
         w.capitalize()
-
         for w in words
-
-        if w not in STOPWORDS and len(w) > 3
-
+        if w.lower() not in STOPWORDS
+        and len(w) > 3
+        and w.isalpha()
     ]
+
+    if not clean:
+        return "Miscellaneous"
 
     return ", ".join(clean[:3])
 

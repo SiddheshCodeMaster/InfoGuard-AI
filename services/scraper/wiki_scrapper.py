@@ -237,8 +237,11 @@ def monitor_page(title):
         "page": title,
         "revid": rev_info["revid"],
         "username": rev_info["user"],
-        "clean_content": new_clean,
-        **analysis_result,
+        "final_risk": analysis_result["final_risk"],
+        "semantic_similarity": analysis_result["semantic_similarity"],
+        "username_risk": analysis_result["username_risk"],
+        "content_risk": analysis_result["content_risk"],
+        "flagged": analysis_result["flagged"],
         "created_at": datetime.utcnow()
     })
 

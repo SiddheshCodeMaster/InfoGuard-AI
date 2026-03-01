@@ -11,7 +11,7 @@ import plotly.express as px
 
 from engine.prioritization import compute_priority
 
-# ---------------- CONFIGURATION ---------------- #
+# ---------------- CONFIG ---------------- #
 
 st.set_page_config(page_title="InfoGuard AI Dashboard", layout="wide")
 px.defaults.template = "plotly_white"
@@ -25,7 +25,7 @@ analysis = db["analysis"]
 anomalies = db["anomalies"]
 topics_collection = db["topics"]
 
-# ---------------- SAFE DATA LOADERS ---------------- #
+# ---------------- SAFE LOADERS ---------------- #
 
 def safe_df(docs):
     if not docs:
@@ -53,10 +53,9 @@ def load_anomalies():
     return df
 
 def load_topics():
-    df = safe_df(list(topics_collection.find()))
-    return df
+    return safe_df(list(topics_collection.find()))
 
-# ---------------- LOAD DATA ---------------- #
+# ---------------- LOAD ---------------- #
 
 df_runs = load_runs()
 df_analysis = load_analysis()
@@ -64,144 +63,131 @@ df_anom = load_anomalies()
 df_priority = compute_priority()
 df_topics = load_topics()
 
-# ---------------- DASHBOARD HEADER ---------------- #
+# =====================================================
+# =================== HEADER ==========================
+# =====================================================
 
-st.title("🛡 InfoGuard AI — Wikipedia Risk Monitoring System")
-st.markdown("AI-powered monitoring system detecting suspicious edit behavior, anomaly spikes, and high-risk pages in real-time.")
+st.title("🛡 InfoGuard AI")
+st.markdown("Production-grade AI system for detecting risky Wikipedia edits, anomaly spikes, and emerging narratives.")
 
-# ==========================================================
-# ================== MONITORING METRICS ====================
-# ==========================================================
+# =====================================================
+# ================= SYSTEM HEALTH =====================
+# =====================================================
+
+st.markdown("## 📈 System Health Overview")
 
 if not df_runs.empty:
 
     latest = df_runs.iloc[-1]
 
+    throughput = 0
+    if latest["duration_seconds"] > 0:
+        throughput = round(latest["pages_checked"] / (latest["duration_seconds"]/60), 2)
+
     col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Pages Scanned (Last Run)", int(latest["pages_checked"]))
-    col2.metric("Edits Detected (Last Run)", int(latest["changes_detected"]))
-    col3.metric("Flagged Edits (Last Run)", int(latest["flagged"]))
-    col4.metric("Total Flagged (All Time)", analysis.count_documents({"flagged": True}))
-    col5.metric("Run Duration (sec)", round(latest["duration_seconds"], 2))
 
-    st.markdown("## 📊 Monitoring Activity Over Time")
-    st.caption("Shows how system coverage and flagged edits evolve across monitoring cycles.")
+    col1.metric("Pages Scanned", int(latest["pages_checked"]))
+    col2.metric("Edits Detected", int(latest["changes_detected"]))
+    col3.metric("Flagged Edits", int(latest["flagged"]))
+    col4.metric("Runtime (sec)", round(latest["duration_seconds"], 2))
+    col5.metric("Throughput (pages/min)", throughput)
 
-    # Pages scanned trend
-    fig_pages = px.line(
-        df_runs,
-        x="timestamp",
-        y="pages_checked",
-        markers=True,
-        labels={"timestamp": "Time", "pages_checked": "Pages Scanned"},
-        title="Pages Scanned Per Monitoring Cycle"
-    )
-    st.plotly_chart(fig_pages, use_container_width=True)
+else:
+    st.info("No monitoring data yet.")
 
-    # Flagged edits trend
-    fig_flagged = px.line(
-        df_runs,
-        x="timestamp",
-        y="flagged",
-        markers=True,
-        labels={"timestamp": "Time", "flagged": "Flagged Edits"},
-        title="Flagged Edits Per Monitoring Cycle"
-    )
-    st.plotly_chart(fig_flagged, use_container_width=True)
+# =====================================================
+# ============== MONITORING ACTIVITY ==================
+# =====================================================
 
-# ==========================================================
-# ================== RISK ANALYTICS ========================
-# ==========================================================
+if not df_runs.empty:
+
+    st.markdown("## 📊 Monitoring Activity")
+    st.caption("System coverage and flagged edit detection over time.")
+
+    colA, colB = st.columns(2)
+
+    with colA:
+        fig_pages = px.line(
+            df_runs,
+            x="timestamp",
+            y="pages_checked",
+            markers=True,
+            labels={"timestamp": "Time", "pages_checked": "Pages Scanned"},
+            title="Pages Scanned Per Cycle"
+        )
+        st.plotly_chart(fig_pages, use_container_width=True)
+
+    with colB:
+        fig_flagged = px.bar(
+            df_runs,
+            x="timestamp",
+            y="flagged",
+            labels={"timestamp": "Time", "flagged": "Flagged Edits"},
+            title="Flagged Edits Per Cycle"
+        )
+        st.plotly_chart(fig_flagged, use_container_width=True)
+
+# =====================================================
+# ================= RISK INTELLIGENCE =================
+# =====================================================
 
 if not df_analysis.empty:
 
-    st.markdown("## 📊 Risk Distribution")
-    st.caption("Distribution of computed edit risk scores (0 = safe, 1 = highly suspicious).")
+    st.markdown("## 🧠 Risk Intelligence")
 
-    fig_dist = px.histogram(
-        df_analysis,
-        x="final_risk",
-        nbins=25,
-        labels={"final_risk": "Risk Score"},
-        title="Distribution of Edit Risk Levels"
-    )
-    fig_dist.update_layout(xaxis=dict(range=[0,1]))
-    st.plotly_chart(fig_dist, use_container_width=True)
+    col1, col2 = st.columns(2)
 
-    # -------- Smoothed Risk Trend -------- #
-
-    if "created_at" in df_analysis.columns:
-
-        df_daily = (
-            df_analysis
-            .set_index("created_at")
-            .resample("6H")   # smoother trend
-            .mean(numeric_only=True)
-            .reset_index()
+    # Risk Distribution
+    with col1:
+        fig_dist = px.histogram(
+            df_analysis,
+            x="final_risk",
+            nbins=25,
+            labels={"final_risk": "Risk Score"},
+            title="Risk Score Distribution"
         )
+        fig_dist.update_layout(xaxis=dict(range=[0,1]))
+        st.plotly_chart(fig_dist, use_container_width=True)
 
-        st.markdown("## 📈 Risk Evolution Over Time")
-        st.caption("Average risk level across edits. Red markers highlight anomaly spikes.")
-
-        fig_trend = px.line(
-            df_daily,
-            x="created_at",
-            y="final_risk",
-            markers=True,
-            labels={
-                "created_at": "Time",
-                "final_risk": "Average Risk"
-            },
-            title="Average Risk Trend"
-        )
-
-        if not df_anom.empty:
-            fig_trend.add_scatter(
-                x=df_anom["timestamp"],
-                y=df_anom["final_risk"],
-                mode="markers",
-                marker=dict(color="red", size=10),
-                name="Detected Anomaly"
+    # Rolling Risk Trend
+    with col2:
+        if "created_at" in df_analysis.columns:
+            df_hourly = (
+                df_analysis
+                .set_index("created_at")
+                .resample("6H")
+                .mean(numeric_only=True)
+                .reset_index()
             )
 
-        fig_trend.update_layout(yaxis=dict(range=[0,1]))
-        st.plotly_chart(fig_trend, use_container_width=True)
+            fig_trend = px.line(
+                df_hourly,
+                x="created_at",
+                y="final_risk",
+                labels={"created_at": "Time", "final_risk": "Avg Risk"},
+                title="Smoothed Risk Trend"
+            )
 
-    # -------- Most Edited Pages -------- #
+            if not df_anom.empty:
+                fig_trend.add_scatter(
+                    x=df_anom["timestamp"],
+                    y=df_anom["final_risk"],
+                    mode="markers",
+                    marker=dict(color="red", size=8),
+                    name="Anomaly"
+                )
 
-    st.markdown("## 🔥 Most Actively Edited Pages")
-    st.caption("Pages receiving the highest number of edits (higher exposure to manipulation).")
+            fig_trend.update_layout(yaxis=dict(range=[0,1]))
+            st.plotly_chart(fig_trend, use_container_width=True)
 
-    page_counts = (
-        df_analysis["page"]
-        .value_counts()
-        .head(10)
-        .reset_index()
-    )
-    page_counts.columns = ["Page", "Edit Count"]
+# =====================================================
+# ================= PRIORITIZATION ====================
+# =====================================================
 
-    page_counts = page_counts.sort_values("Edit Count")
+st.markdown("## 🚨 Intelligent Prioritization")
+st.caption("Pages ranked by combined risk score, anomaly impact, and activity volume.")
 
-    fig_activity = px.bar(
-        page_counts,
-        x="Edit Count",
-        y="Page",
-        orientation="h",
-        title="Top 10 Most Edited Pages"
-    )
-
-    st.plotly_chart(fig_activity, use_container_width=True)
-
-# ==========================================================
-# ================== PRIORITIZATION ========================
-# ==========================================================
-
-st.markdown("## 🚨 Intelligent Risk Prioritization")
-st.caption("AI-ranked pages combining historical risk, anomaly detection, and edit activity.")
-
-if df_priority.empty or "priority_score" not in df_priority.columns:
-    st.info("Not enough data yet to compute intelligent priorities.")
-else:
+if not df_priority.empty and "priority_score" in df_priority.columns:
 
     df_top = (
         df_priority
@@ -216,48 +202,39 @@ else:
         y="page",
         orientation="h",
         color="avg_risk",
-        color_continuous_scale="reds",
+        color_continuous_scale="Reds",
         labels={
-            "priority_score": "Priority Level",
-            "page": "Wikipedia Page",
+            "priority_score": "Priority Score",
+            "page": "Page",
             "avg_risk": "Average Risk"
-        },
-        title="Highest Priority Pages to Monitor"
+        }
     )
 
     st.plotly_chart(fig_priority, use_container_width=True)
 
-# ==========================================================
-# ================== TOPIC ANALYSIS ========================
-# ==========================================================
+else:
+    st.info("Not enough data yet.")
 
-st.markdown("## 🧠 Emerging Edit Narratives")
-st.caption("Topic modeling clusters high-risk edits into thematic narratives.")
+# =====================================================
+# ================= TOPIC ANALYSIS ====================
+# =====================================================
+
+st.markdown("## 🧩 Emerging Narratives")
+st.caption("Topic clusters derived from high-risk edits.")
 
 if not df_topics.empty and "Count" in df_topics.columns:
 
-    df_topics_sorted = df_topics.sort_values("Count", ascending=True).head(10)
+    df_topics_sorted = df_topics.sort_values("Count", ascending=True).head(8)
 
     fig_topics = px.bar(
         df_topics_sorted,
         x="Count",
         y="Name",
         orientation="h",
-        title="Top Emerging Edit Themes",
-        labels={"Count": "Number of Edits", "Name": "Topic"}
+        labels={"Count": "Edit Count", "Name": "Topic"}
     )
 
     st.plotly_chart(fig_topics, use_container_width=True)
 
-    st.markdown("### 📊 Topic Share Distribution")
-
-    fig_topic_dist = px.pie(
-        df_topics.head(8),
-        values="Count",
-        names="Name",
-        title="Narrative Share Across High-Risk Edits"
-    )
-
-    st.plotly_chart(fig_topic_dist, use_container_width=True)
 else:
-    st.info("Not enough topic data available yet.")
+    st.info("Topic data not yet available.")
